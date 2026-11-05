@@ -1,0 +1,45 @@
+version: 2
+
+sources:
+  - name: hmda_raw
+    description: Raw tables loaded by ingestion/hmda_lab (all HMDA values kept as STRING).
+    database: "{{ env_var('GCP_PROJECT_ID', 'dummy-project') }}"
+    schema: "{{ env_var('BQ_DATASET', 'hmda_raw') }}"
+    tables:
+      - name: hmda_lar
+        description: >
+          HMDA public Loan/Application Register (CFPB/FFIEC), 2024-2025. Hyphenated
+          dictionary names are loaded with underscores (denial_reason-1 -> denial_reason_1,
+          derived_msa-md -> derived_msa_md). Partitioned by activity_year, clustered by
+          state_code, lei, action_taken.
+        loaded_at_field: _ingested_at
+        columns:
+          - name: activity_year
+            data_tests: [not_null]
+          - name: lei
+            description: Legal Entity Identifier of the reporting institution.
+            data_tests: [not_null]
+          - name: action_taken
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: ['1', '2', '3', '4', '5', '6', '7', '8']
+          - name: state_code
+          - name: derived_msa_md
+          - name: loan_amount
+          - name: denial_reason_1
+      - name: fred_observations
+        description: FRED observations for MORTGAGE30US, MORTGAGE15US, FEDFUNDS, DGS10, UNRATE.
+        loaded_at_field: _ingested_at
+        freshness:
+          warn_after: {count: 14, period: day}
+        columns:
+          - name: series_id
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: ['MORTGAGE30US', 'MORTGAGE15US', 'FEDFUNDS', 'DGS10', 'UNRATE']
+          - name: observation_date
+            data_tests: [not_null]

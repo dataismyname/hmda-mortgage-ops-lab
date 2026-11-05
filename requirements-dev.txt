@@ -1,0 +1,5 @@
+-r requirements.txt
+pytest==8.4.2
+dbt-core==1.10.13
+dbt-bigquery==1.10.2
+# Airflow is installed separately with its constraints file, see airflow/README.md

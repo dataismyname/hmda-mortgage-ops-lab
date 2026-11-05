@@ -1,0 +1,60 @@
+version: 2
+models:
+  - name: mart_approval_denial_rates
+    description: Approval/denial rates by year, state, MSA/MD, purpose and product.
+    columns:
+      - name: activity_year
+        data_tests: [not_null]
+      - name: decisioned_applications
+        data_tests: [not_null]
+      - name: approval_rate
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: denial_rate
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: mart_denial_reasons
+    columns:
+      - name: denial_reason_desc
+        data_tests: [not_null]
+      - name: share_of_denials
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: mart_lender_metrics
+    description: One row per lender (LEI) and year.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "concat(cast(activity_year as string), '|', lei)"
+    columns:
+      - name: lei
+        data_tests: [not_null]
+      - name: market_share_volume
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: denial_rate
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
+  - name: mart_geography_metrics
+    columns:
+      - name: activity_year
+        data_tests: [not_null]
+      - name: active_lenders
+        data_tests:
+          - value_between:
+              arguments: {min_value: 1, max_value: 100000}
+  - name: mart_loan_pricing_vs_fred
+    columns:
+      - name: term_bucket
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['30y', '15y']
+      - name: benchmark_rate
+        description: Annual average of MORTGAGE30US or MORTGAGE15US.
+        data_tests: [not_null]

@@ -1,0 +1,9 @@
+action_taken,action_taken_desc,is_decisioned,is_approved,is_denied,is_originated
+1,Loan originated,true,true,false,true
+2,Application approved but not accepted,true,true,false,false
+3,Application denied,true,false,true,false
+4,Application withdrawn by applicant,false,false,false,false
+5,File closed for incompleteness,false,false,false,false
+6,Purchased loan,false,false,false,false
+7,Preapproval request denied,false,false,false,false
+8,Preapproval request approved but not accepted,false,false,false,false

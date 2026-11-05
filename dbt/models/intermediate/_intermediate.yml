@@ -1,0 +1,30 @@
+version: 2
+models:
+  - name: int_hmda__applications
+    columns:
+      - name: lar_row_id
+        data_tests: [unique, not_null]
+      - name: is_decisioned
+        data_tests: [not_null]
+      - name: term_bucket
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['30y', '15y', 'other', 'unknown']
+  - name: int_hmda__denial_reasons
+    columns:
+      - name: lar_row_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_hmda__applications')
+                field: lar_row_id
+      - name: denial_reason_code
+        data_tests:
+          - value_between:
+              arguments: {min_value: 1, max_value: 9}
+  - name: int_fred__rates_by_year
+    columns:
+      - name: activity_year
+        data_tests: [unique, not_null]

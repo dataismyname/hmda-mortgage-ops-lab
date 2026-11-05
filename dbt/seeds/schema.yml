@@ -1,0 +1,16 @@
+version: 2
+seeds:
+  - name: hmda_action_taken
+    description: action_taken codes from the FFIEC public LAR data dictionary. Decisioned = 1, 2, 3.
+    columns:
+      - name: action_taken
+        data_tests: [unique, not_null]
+  - name: hmda_denial_reason
+    description: denial_reason-1..4 codes (10 = not applicable).
+    columns:
+      - name: denial_reason_code
+        data_tests: [unique, not_null]
+  - name: hmda_loan_purpose
+    columns:
+      - name: loan_purpose
+        data_tests: [unique, not_null]

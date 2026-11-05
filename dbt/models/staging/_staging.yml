@@ -1,0 +1,51 @@
+version: 2
+models:
+  - name: stg_hmda__lar
+    description: Typed HMDA LAR. 'NA'/'Exempt' become NULL. Amounts in USD; income in USD thousands.
+    columns:
+      - name: lar_row_id
+        data_tests: [unique, not_null]
+      - name: activity_year
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [2024, 2025]
+                quote: false
+      - name: lei
+        data_tests: [not_null]
+      - name: action_taken
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('hmda_action_taken')
+                field: action_taken
+      - name: loan_purpose
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 31, 32, 4, 5]
+                quote: false
+      - name: loan_amount
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1000000000}
+      - name: interest_rate
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 30}
+      - name: denial_reason_1
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1111]  # 1111 = Exempt
+                quote: false
+  - name: stg_fred__observations
+    columns:
+      - name: series_id
+        data_tests: [not_null]
+      - name: observation_date
+        data_tests: [not_null]
+      - name: value
+        data_tests: [not_null]

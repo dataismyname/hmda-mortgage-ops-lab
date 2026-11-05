@@ -1,0 +1,6 @@
+{"realtime_start":"2026-11-04","realtime_end":"2026-11-04","observation_start":"2024-01-01","units":"lin","count":4,
+ "observations":[
+  {"realtime_start":"2026-11-04","realtime_end":"2026-11-04","date":"2024-01-04","value":"6.62"},
+  {"realtime_start":"2026-11-04","realtime_end":"2026-11-04","date":"2024-01-11","value":"6.66"},
+  {"realtime_start":"2026-11-04","realtime_end":"2026-11-04","date":"2024-01-18","value":"."},
+  {"realtime_start":"2026-11-04","realtime_end":"2026-11-04","date":"2024-01-25","value":"6.69"}]}
