@@ -16,3 +16,4 @@ logs/
 profiles.yml
 !dbt/profiles.example.yml
 .DS_Store
+docs/internal/
