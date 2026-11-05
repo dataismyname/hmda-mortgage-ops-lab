@@ -57,7 +57,7 @@ Analytics & data engineer. I turn messy public and business data into tested
 warehouse models, pipelines and dashboards.
 
 **Now building:** [HMDA Mortgage Ops Lab](https://github.com/dataismyname/hmda-mortgage-ops-lab) —
-25 M+ U.S. mortgage applications (CFPB HMDA 2024-2025) and FRED rates in BigQuery,
+U.S. mortgage applications (CFPB HMDA 2024-2025) and FRED rates in BigQuery,
 modeled and tested with dbt, orchestrated with Airflow, served in Power BI and Looker Studio.
 
 ### Stack
@@ -66,11 +66,11 @@ SQL · Python · dbt · BigQuery · Airflow · Power BI · Looker Studio · Spar
 ### Selected projects
 | Project | What it shows |
 |---|---|
-| [hmda-mortgage-ops-lab](https://github.com/dataismyname/hmda-mortgage-ops-lab) | Ingestion, dbt models + 50 tests, mortgage market metrics |
+| [hmda-mortgage-ops-lab](https://github.com/dataismyname/hmda-mortgage-ops-lab) | Ingestion, dbt models + 55 tests, mortgage market metrics |
 | [fraud-detection-mlops](https://github.com/dataismyname/fraud-detection-mlops) | Streaming ML pipeline with Kafka, Spark and MLOps |
 | [golf_analytics_sql_power_bi](https://github.com/dataismyname/golf_analytics_sql_power_bi) | SQL modeling and a Power BI report |
 | [credit_card_churn_mlproject](https://github.com/dataismyname/credit_card_churn_mlproject) | End-to-end churn model, Docker, Azure |
-| [real_estate_web_scrapping_analysis](https://github.com/dataismyname/real_estate_web_scrapping_analysis) | Web scraping, clustering and pricing models |
+| [real-estate-web-scraping-analysis](https://github.com/dataismyname/real-estate-web-scraping-analysis) | Web scraping, clustering and pricing models |
 
 ### Contact
 [dataexpn.com](https://dataexpn.com) · LinkedIn: <add link>

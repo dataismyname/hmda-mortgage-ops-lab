@@ -38,7 +38,7 @@ flowchart LR
     H --> I
     F --> I
     I --> R
-    D{{dbt-bigquery<br/>models · 50+ tests · docs}}
+    D{{dbt-bigquery<br/>models · 55 tests · docs}}
     R --> D --> S --> M --> K
     K --> PBI[Power BI]
     K --> LS[Looker Studio]
