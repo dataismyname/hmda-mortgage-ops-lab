@@ -1,8 +1,8 @@
 # HMDA Mortgage Ops Lab
 
 A public analytics engineering lab on the U.S. mortgage market, built only on public data:
-the **HMDA** loan/application register published by the CFPB/FFIEC and interest-rate and macro
-series from **FRED**. Python loads raw data into BigQuery; dbt types, tests and models it into marts.
+the **HMDA** loan/application register published by the CFPB/FFIEC. Python loads raw data into
+BigQuery; dbt types, tests and models it into marts.
 
 > **Status: phase 1.5, code complete, verification on BigQuery pending.** The ingestion code and
 > the dbt project have offline tests (pytest, `dbt parse`), but they have **not yet been run
@@ -20,7 +20,8 @@ with reproducible, tested SQL on public data:
   term and lender size?
 - What share of decisioned applications are approved or denied, and why are they denied?
 - Who are the lenders in a market, and what is their share and pricing?
-- How does loan pricing compare with the Freddie Mac PMMS benchmark and Treasury rates?
+- How are loans priced? HMDA's `rate_spread` (APR minus the Average Prime Offer Rate for a
+  comparable loan) by year, state, loan type, purpose, term and lien status.
 
 Public HMDA has no application or action dates, so everything is measured per `activity_year`.
 
@@ -30,25 +31,23 @@ Public HMDA has no application or action dates, so everything is measured per `a
 flowchart LR
     subgraph Sources["Public sources"]
         H["HMDA Data Browser API<br/>and Snapshot files<br/>(CFPB / FFIEC)"]
-        F["FRED API<br/>MORTGAGE30US, MORTGAGE15US,<br/>FEDFUNDS, DGS10, UNRATE"]
     end
     subgraph Ingestion["Python CLI: python -m hmda_lab"]
         I["download, validate 99 columns,<br/>load job to staging,<br/>CREATE OR REPLACE (no DML)"]
     end
     subgraph BQ["BigQuery"]
-        R[("raw<br/>hmda_lar, fred_observations")]
+        R[("raw<br/>hmda_lar")]
         SE[("reference<br/>seeds: code descriptions")]
         S[("staging<br/>typed views")]
-        M[("intermediate<br/>outcome flags, denial reasons,<br/>annual FRED rates")]
+        M[("intermediate<br/>outcome flags, term buckets,<br/>denial reasons")]
         K[("marts<br/>tables")]
     end
     H --> I
-    F --> I
     I --> R
     R --> S
     SE --> M
     S --> M --> K
-    D{{"dbt Core + dbt-bigquery<br/>70 data tests"}} -. builds and tests .-> S
+    D{{"dbt Core + dbt-bigquery<br/>69 data tests"}} -. builds and tests .-> S
     D -.-> M
     D -.-> K
 ```
@@ -57,11 +56,11 @@ flowchart LR
 
 | Layer | Where | What it solves |
 |---|---|---|
-| Ingestion | `ingestion/hmda_lab/` | Downloads HMDA (one state and year through the Data Browser API, or the nationwide snapshot) and FRED; checks that all 99 public LAR columns are present; normalizes names (`denial_reason-1` → `denial_reason_1`); adds `_source` and `_ingested_at`. Loads are idempotent and use only load jobs and DDL, so they also work in the BigQuery sandbox. |
-| Raw | `hmda_raw.hmda_lar`, `hmda_raw.fred_observations` | Keeps HMDA values as text (`NA`, `Exempt`, `<20%` are valid values). `hmda_lar` is partitioned by `activity_year` (integer range) and clustered by `state_code, lei, action_taken`. |
-| Staging | `dbt/models/staging` | Casts types safely (`NA`/`Exempt` → NULL), builds a stable row id (HMDA has no public loan id), keeps the latest FRED observation per series and date. |
+| Ingestion | `ingestion/hmda_lab/` | Downloads HMDA (one state and year through the Data Browser API, or the nationwide snapshot); checks that all 99 public LAR columns are present; normalizes names (`denial_reason-1` → `denial_reason_1`); adds `_source` and `_ingested_at`. Loads are idempotent and use only load jobs and DDL, so they also work in the BigQuery sandbox. |
+| Raw | `hmda_raw.hmda_lar` | Keeps HMDA values as text (`NA`, `Exempt`, `<20%` are valid values). `hmda_lar` is partitioned by `activity_year` (integer range) and clustered by `state_code, lei, action_taken`. |
+| Staging | `dbt/models/staging` | Casts types safely (`NA`/`Exempt` → NULL), builds a stable row id (HMDA has no public loan id). |
 | Reference | `dbt/seeds` | Code descriptions from the FFIEC data dictionary: `action_taken`, `denial_reason`, `loan_purpose`. |
-| Intermediate | `dbt/models/intermediate` | Outcome flags (decisioned, approved, denied, originated), term buckets, one row per denial reason, annual averages of the FRED series. |
+| Intermediate | `dbt/models/intermediate` | Outcome flags (decisioned, approved, denied, originated), term buckets, one row per denial reason. |
 | Marts | `dbt/models/marts` | Tables ready for analysis, one business question each (catalog below). |
 
 ## Model catalog
@@ -69,15 +68,13 @@ flowchart LR
 | Model | Grain | Answers |
 |---|---|---|
 | `stg_hmda__lar` | one HMDA record | Typed LAR record |
-| `stg_fred__observations` | series × date | Typed FRED observation |
 | `int_hmda__applications` | one HMDA record | Outcome flags, purpose description, `term_bucket` (30y, 15y, other, unknown) |
 | `int_hmda__denial_reasons` | denied application × reason | Up to four denial reasons per application |
-| `int_fred__rates_by_year` | year | Annual averages of the five FRED series |
 | `mart_approval_denial_rates` | year × state × MSA/MD × purpose × product | Approval and denial rates over decisioned applications |
 | `mart_denial_reasons` | year × state × MSA/MD × reason | Share of denials citing each reason |
 | `mart_lender_metrics` | year × lender (LEI) | Volume, outcomes, market share, pricing, rank |
 | `mart_geography_metrics` | year × state × county × MSA/MD | Applications, originations, active lenders, rates, median income |
-| `mart_loan_pricing_vs_fred` | year × loan type × purpose × term | Note rate of originated loans vs the PMMS benchmark of the same year |
+| `mart_loan_pricing` | year × state × loan type × purpose × term × lien status | Rate spread vs APOR of originated loans (average, median, p90), note rate, loan costs, HOEPA high-cost share |
 | `mart_pipeline_pullthrough` | year × state × loan type × purpose × term × lender size | **Pull-through** (originated / applications) and **fallout shares** |
 
 ### `mart_pipeline_pullthrough` definitions
@@ -94,6 +91,21 @@ flowchart LR
   `10000_plus`. These thresholds are a project convention, not a regulatory definition. With one
   state loaded, the bucket reflects the lender's volume in that state, not nationwide.
 
+### `mart_loan_pricing` definitions
+
+- Population: originated loans (`action_taken` = 1).
+- `rate_spread` is reported in the public LAR as the loan's APR minus the Average Prime Offer Rate
+  (APOR) for a comparable transaction on the date the rate was set, in percentage points. APOR is
+  the benchmark the CFPB publishes for this, so pricing needs no external rate series.
+- Loans with `rate_spread` `NA` or `Exempt` count in `originated_loans` but not in
+  `loans_with_rate_spread` or the spread statistics; `rate_spread_coverage` shows the share.
+- `median_rate_spread` and `p90_rate_spread` use `APPROX_QUANTILES` (approximate).
+- `hoepa_high_cost_share` = loans with `hoepa_status` 1 / originated loans.
+- A warning-level test flags cells with at least 30 spreads whose average is outside −5 to
+  +8.5 pp. 8.5 pp is the highest APR-over-APOR trigger for a HOEPA high-cost mortgage
+  (12 CFR 1026.32(a)(1)(i)); a whole cell averaging above it points to a data error. The bounds
+  are project sanity checks, not regulatory limits.
+
 Other definitions: a **decisioned** application has `action_taken` 1, 2 or 3; approval rate =
 (1 + 2) / decisioned; denial rate = 3 / decisioned.
 
@@ -102,7 +114,7 @@ Other definitions: a **decisioned** application has `action_taken` 1, 2 or 3; ap
 Requirements: Python 3.11+ and a Google Cloud project with BigQuery (the free
 [BigQuery sandbox](https://cloud.google.com/bigquery/docs/sandbox) works, see
 [Sandbox notes](#bigquery-sandbox-notes)), a service account with *BigQuery Data Editor* and
-*BigQuery Job User*, and a free [FRED API key](https://fred.stlouisfed.org/docs/api/api_key.html).
+*BigQuery Job User*. No API keys are needed: HMDA is public.
 Never commit keys: `.env`, `profiles.yml` and service-account files are git-ignored.
 
 ### 1. Environment
@@ -112,7 +124,7 @@ macOS / Linux:
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-cp .env.example .env              # fill GCP_PROJECT_ID, GOOGLE_APPLICATION_CREDENTIALS, FRED_API_KEY
+cp .env.example .env              # fill GCP_PROJECT_ID, GOOGLE_APPLICATION_CREDENTIALS
 set -a && source .env && set +a
 export PYTHONPATH=ingestion
 ```
@@ -135,16 +147,14 @@ $env:PYTHONPATH = "ingestion"
 
 ```bash
 python -m hmda_lab --dry-run hmda --states DE      # default year: 2025
-python -m hmda_lab --dry-run fred
 ```
 
 The dry run prints the URLs, the table DDL and the `CREATE OR REPLACE` statement it would run.
 
-### 3. Load one state and one year, then FRED
+### 3. Load one state and one year
 
 ```bash
 python -m hmda_lab hmda --source api --years 2025 --states DE
-python -m hmda_lab fred --start 2018-01-01
 ```
 
 More than one state, more than one year, or `--source snapshot` (nationwide) needs
@@ -157,7 +167,7 @@ mkdir -p ~/.dbt && cp dbt/profiles.example.yml ~/.dbt/profiles.yml   # reads pro
 cd dbt
 dbt debug
 dbt seed
-dbt build          # models + 70 data tests
+dbt build          # models + 69 data tests (one warning-level)
 dbt docs generate  # optional
 ```
 
@@ -165,12 +175,12 @@ There are no dbt packages, so `dbt deps` is not needed.
 
 ## Tests
 
-- **Python (offline):** `pytest` runs 56 unit tests with small fixtures and a fake BigQuery
+- **Python (offline):** `pytest` runs 40 unit tests with small fixtures and a fake BigQuery
   client. A fixture blocks any network access, and a guard refuses any SQL with DML.
-- **dbt:** 70 data tests: `unique`, `not_null`, `accepted_values`, `relationships`, a custom
+- **dbt:** 69 data tests: `unique`, `not_null`, `accepted_values`, `relationships`, a custom
   `value_between` test, and eight singular tests, for example: approved + denied = decisioned,
   lender market shares sum to 1, pull-through and fallout shares sum to 1, mart totals reconcile
-  with `int_hmda__applications`, originated ≤ approved, FRED covers every HMDA year.
+  with `int_hmda__applications`, originated ≤ approved, loan-pricing spreads in a plausible range.
 
 ## BigQuery sandbox notes
 
@@ -181,9 +191,8 @@ The [sandbox](https://cloud.google.com/bigquery/docs/sandbox) needs no billing a
   adds the new ones; then staging is dropped. dbt materializes views and tables only (no
   incremental models or snapshots); seeds use load jobs.
 - **Tables, views and partitions expire after 60 days.** Rerun the load and `dbt build` to
-  recreate them. Date partitions expire 60 days after the partition date, so in sandbox mode
-  (`BQ_SANDBOX=true`, the default) the FRED table is not partitioned. The HMDA table uses
-  integer-range partitions, which have no partition expiration.
+  recreate them. The HMDA table uses integer-range partitions on `activity_year`, which have no
+  partition expiration (date partitions would expire 60 days after the partition date).
 - **10 GiB lifetime storage**, not refunded on deletion: the CLI loads one state and one year
   unless you pass `--allow-large`.
 
@@ -193,18 +202,19 @@ Details in [docs/data-notes.md](docs/data-notes.md).
 
 | Item | Status |
 |---|---|
-| Ingestion CLI (HMDA, FRED), sandbox-safe loads | Code and unit tests done; **first real BigQuery load pending** |
-| dbt models and 70 data tests | `dbt parse` passes; **`dbt build` on BigQuery pending** |
+| Ingestion CLI (HMDA), sandbox-safe loads | Code and unit tests done; **first real BigQuery load pending** |
+| dbt models and 69 data tests | `dbt parse` passes; **`dbt build` on BigQuery pending** |
 | Results or figures from the warehouse | None published until the verification run |
 | Dashboards | Not started |
 | CI | Not set up |
 | Orchestration | `airflow/dags/hmda_lab_dag.py` is a skeleton that has never been run |
 | Historical backfill (2018-2023) | Not started; the code accepts 2024 and 2025 |
+| Macro context | Planned: series from the Federal Reserve Board (H.15) and BLS; not built |
 
 ## Repository layout
 
 ```
-ingestion/hmda_lab/   Python package and CLI (hmda, fred)
+ingestion/hmda_lab/   Python package and CLI (hmda)
 tests/                pytest unit tests with small fixtures (no network)
 dbt/                  dbt project: staging, intermediate, marts, seeds, tests
 airflow/dags/         DAG skeleton (never run)
@@ -216,14 +226,6 @@ docs/                 Data notes
 | Source | What | Links | Terms |
 |---|---|---|---|
 | HMDA public loan-level data (CFPB / FFIEC) | Mortgage applications and loans reported under the Home Mortgage Disclosure Act, activity years 2024 and 2025 | [Data publication](https://ffiec.cfpb.gov/data-publication/) · [Data Browser API](https://ffiec.cfpb.gov/documentation/api/data-browser/) · [Public LAR data fields](https://ffiec.cfpb.gov/documentation/publications/loan-level-datasets/lar-data-fields) · [Disclosure policy (Federal Register, 2019)](https://www.federalregister.gov/documents/2019/01/31/2018-28404/disclosure-of-loan-level-hmda-data) | Published by the agencies for public use, modified by the CFPB to protect applicant and borrower privacy. This repo does not redistribute the data files; it downloads them from the source. |
-| FRED, Federal Reserve Bank of St. Louis | MORTGAGE30US, MORTGAGE15US, FEDFUNDS, DGS10, UNRATE | [FRED API](https://fred.stlouisfed.org/docs/api/fred/) · [FRED API Terms of Use](https://fred.stlouisfed.org/docs/api/terms_of_use.html) · [FRED Services Terms of Use](https://fred.stlouisfed.org/legal/) | Free API key required; use is subject to the FRED terms. MORTGAGE30US and MORTGAGE15US come from the Freddie Mac Primary Mortgage Market Survey® ("Copyright, 2016, Freddie Mac. Reprinted with permission." per the series notes); cite the source. This repo does not redistribute FRED data. |
-
-Required notice: *This product uses the FRED® API but is not endorsed or certified by the Federal
-Reserve Bank of St. Louis.*
-
-Suggested citation for the benchmark rates: *Freddie Mac, 30-Year Fixed Rate Mortgage Average in
-the United States [MORTGAGE30US], retrieved from FRED, Federal Reserve Bank of St. Louis* (same
-form for MORTGAGE15US).
 
 The code is MIT-licensed (see `LICENSE`). Analyses describe aggregate market patterns and must not
 be used to identify individuals or to make credit decisions.

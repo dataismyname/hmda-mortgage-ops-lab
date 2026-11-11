@@ -1,5 +1,7 @@
 # Data notes (phases 1 and 1.5)
 
+The lab uses HMDA public data only.
+
 - Data Browser CSV endpoint: `https://ffiec.cfpb.gov/v2/data-browser-api/view/csv?years=2025&states=DE`.
   It answers with a redirect to a precomputed file on `files.ffiec.cfpb.gov` and needs a geography filter
   (states, msamds, counties or leis). The 2024 file is served from the *one-year* dataset, 2025 from the *snapshot*.
@@ -9,6 +11,10 @@
 - Placeholders: `NA` (not applicable), `Exempt` (partial exemption), `1111` (exempt code in some fields),
   bucketed text in `debt_to_income_ratio` and `applicant_age`. Raw keeps strings; staging casts safely.
 - `derived_msa-md = 99999` means the property is outside any MSA/MD.
+- `rate_spread` is the APR minus the Average Prime Offer Rate (APOR) for a comparable transaction on the
+  date the rate was set, in percentage points; `NA` or `Exempt` where it does not apply or the lender is
+  partially exempt. `mart_loan_pricing` uses it as the pricing benchmark, so the lab needs no external
+  rate series.
 - Records per year (Data Browser national aggregation): 2024 ≈ 12.3 M, 2025 ≈ 13.5 M.
 - Delaware (DE) record counts from the Data Browser aggregations endpoint
   (`/v2/data-browser-api/view/aggregations?years=YYYY&states=DE&actions_taken=1,...,8`, checked 10 Nov 2026):
@@ -24,13 +30,12 @@ Limits that matter here, from [Try BigQuery using the sandbox](https://cloud.goo
 |---|---|
 | No DML (`INSERT`, `UPDATE`, `DELETE`, `MERGE`) and no streaming | Loads use only **load jobs** and **DDL**: load into `_staging_*`, then `CREATE OR REPLACE TABLE target ... AS SELECT` the rows outside the reloaded scope `UNION ALL` the staging rows, then drop staging. `bq.assert_no_dml` refuses any SQL with DML before it is sent. |
 | Tables, views and partitions expire after 60 days | Every table and view (raw, dbt staging/intermediate/marts, seeds) disappears 60 days after it was (re)created. `CREATE OR REPLACE` and `dbt build` recreate them, so the clock restarts on each run. Plan to rerun the load and `dbt build` before a demo, or upgrade the project. |
-| Partition expiration is counted from the **partition date** | Time-unit partitions older than 60 days are dropped as soon as they are written ([partition expiration](https://cloud.google.com/bigquery/docs/managing-partitioned-tables#partition-expiration)). The FRED table would lose every 2018-2025 month, so with `BQ_SANDBOX=true` (default) it is **not** partitioned, only clustered by `series_id`. The HMDA table uses **integer-range** partitioning on `activity_year`, which does not support partition expiration, so it keeps its partitioning and clustering. |
+| Partition expiration is counted from the **partition date** | Time-unit partitions older than 60 days are dropped as soon as they are written ([partition expiration](https://cloud.google.com/bigquery/docs/managing-partitioned-tables#partition-expiration)). A date-partitioned table of historical data would lose those rows, so the lab has none: the HMDA table uses **integer-range** partitioning on `activity_year`, which does not support partition expiration, so it keeps its partitioning and clustering. |
 | 10 GiB lifetime storage, not refunded when data is deleted | The CLI loads one state and one year by default; more states, more years or `--source snapshot` (nationwide) need `--allow-large`. Each reload rewrites the whole raw table, so avoid repeated reloads. |
 | 1 TiB of query processing per month (same as the free tier) | `dbt/profiles.example.yml` keeps `maximum_bytes_billed` as a per-query guardrail. |
 
-If the project is later upgraded to billing, set `BQ_SANDBOX=false`, drop `fred_observations` once
-(BigQuery cannot `CREATE OR REPLACE` a table with a different partitioning spec), reload FRED, and
-review the dataset default expirations. Upgrading means possible spend and is David's decision.
+If the project is later upgraded to billing, review the dataset default expirations; no code change
+is needed. Upgrading means possible spend and is David's decision.
 
 **Status:** this flow has unit tests with a fake client only. It has **not** yet been run against a
 real BigQuery project; verification is pending.

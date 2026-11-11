@@ -20,5 +20,5 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-The MIT license covers the code in this repository only. Data from HMDA (CFPB/FFIEC)
-and FRED keeps its own terms; see README "Data sources and licenses".
+The MIT license covers the code in this repository only. HMDA data (CFPB/FFIEC)
+keeps its own terms; see README "Data sources and licenses".
