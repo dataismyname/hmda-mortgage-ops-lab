@@ -24,7 +24,3 @@ models:
         data_tests:
           - value_between:
               arguments: {min_value: 1, max_value: 9}
-  - name: int_fred__rates_by_year
-    columns:
-      - name: activity_year
-        data_tests: [unique, not_null]

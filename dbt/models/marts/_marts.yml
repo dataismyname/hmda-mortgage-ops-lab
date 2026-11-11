@@ -48,16 +48,6 @@ models:
         data_tests:
           - value_between:
               arguments: {min_value: 1, max_value: 100000}
-  - name: mart_loan_pricing_vs_fred
-    columns:
-      - name: term_bucket
-        data_tests:
-          - accepted_values:
-              arguments:
-                values: ['30y', '15y']
-      - name: benchmark_rate
-        description: Annual average of MORTGAGE30US or MORTGAGE15US.
-        data_tests: [not_null]
   - name: mart_pipeline_pullthrough
     description: >
       Pipeline pull-through and fallout. Population = applications with action_taken 1-5
@@ -130,3 +120,67 @@ models:
               arguments: {min_value: 0, max_value: 1}
       - name: fallout_rate
         description: 1 - pullthrough_rate, i.e. action_taken 2-5 / applications.
+  - name: mart_loan_pricing
+    description: >
+      Loan pricing of originated loans (action_taken = 1) from HMDA alone, using rate_spread:
+      the loan's APR minus the Average Prime Offer Rate (APOR) for a comparable transaction on
+      the rate-set date, in percentage points. Grain = activity_year, state_code, loan_type,
+      loan_purpose, term_bucket, lien_status. Loans with rate_spread NA or Exempt count in
+      originated_loans but not in loans_with_rate_spread or the spread statistics.
+    columns:
+      - name: pricing_key
+        description: Surrogate key, the six grain columns joined with '|'.
+        data_tests: [unique, not_null]
+      - name: state_code
+        description: Two-letter state code; 'unknown' when HMDA reports NA.
+      - name: loan_type
+        description: 1 Conventional, 2 FHA, 3 VA, 4 USDA RHS/FSA (FFIEC public LAR dictionary).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4]
+                quote: false
+      - name: loan_purpose
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 31, 32, 4, 5]
+                quote: false
+      - name: term_bucket
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['30y', '15y', 'other', 'unknown']
+      - name: lien_status
+        description: 1 first lien, 2 subordinate lien.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2]
+                quote: false
+      - name: originated_loans
+        data_tests: [not_null]
+      - name: loans_with_rate_spread
+        description: Originated loans with a numeric rate_spread.
+      - name: rate_spread_coverage
+        description: loans_with_rate_spread / originated_loans.
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: avg_rate_spread
+        description: >
+          Average APR minus APOR, percentage points. Plausibility bounds are checked in
+          tests/assert_loan_pricing_spread_is_plausible.sql (rationale there).
+      - name: median_rate_spread
+        description: Approximate median (APPROX_QUANTILES, 100 buckets).
+      - name: p90_rate_spread
+        description: Approximate 90th percentile (APPROX_QUANTILES, 100 buckets).
+      - name: avg_interest_rate
+        description: Average note rate, percent.
+      - name: avg_total_loan_costs
+        description: Average total loan costs in dollars (reported for closed-end loans only).
+      - name: hoepa_high_cost_share
+        description: Share of originated loans with hoepa_status = 1 (high-cost mortgage).
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
