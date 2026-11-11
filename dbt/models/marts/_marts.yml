@@ -58,3 +58,75 @@ models:
       - name: benchmark_rate
         description: Annual average of MORTGAGE30US or MORTGAGE15US.
         data_tests: [not_null]
+  - name: mart_pipeline_pullthrough
+    description: >
+      Pipeline pull-through and fallout. Population = applications with action_taken 1-5
+      (purchased loans and preapproval requests excluded), so pull-through plus the four
+      fallout shares add up to 1. Grain = activity_year, state_code, loan_type, loan_purpose,
+      term_bucket, lender_size_bucket. lender_size_bucket groups lenders (LEI) by their number
+      of action_taken 1-5 applications in the year within the loaded data (under_100,
+      100_to_999, 1000_to_9999, 10000_plus); with a single state loaded it reflects the
+      lender's volume in that state, not nationwide.
+    columns:
+      - name: pullthrough_key
+        description: Surrogate key, the six grain columns joined with '|'.
+        data_tests: [unique, not_null]
+      - name: state_code
+        description: Two-letter state code; 'unknown' when HMDA reports NA.
+      - name: loan_type
+        description: 1 Conventional, 2 FHA, 3 VA, 4 USDA RHS/FSA (FFIEC public LAR dictionary).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 3, 4]
+                quote: false
+      - name: loan_purpose
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 2, 31, 32, 4, 5]
+                quote: false
+      - name: term_bucket
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['30y', '15y', 'other', 'unknown']
+      - name: lender_size_bucket
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['under_100', '100_to_999', '1000_to_9999', '10000_plus']
+      - name: applications
+        description: Applications with action_taken 1-5.
+      - name: pullthrough_rate
+        description: originated_loans / applications.
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: approved_pullthrough_rate
+        description: originated_loans / approved_applications (action_taken 1 or 2).
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: approved_not_accepted_share
+        description: action_taken 2 / applications.
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: denied_share
+        description: action_taken 3 / applications.
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: withdrawn_share
+        description: action_taken 4 / applications.
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: incomplete_share
+        description: action_taken 5 (file closed for incompleteness) / applications.
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}
+      - name: fallout_rate
+        description: 1 - pullthrough_rate, i.e. action_taken 2-5 / applications.
