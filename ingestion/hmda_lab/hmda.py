@@ -69,29 +69,69 @@ def snapshot_url(year: int) -> str:
     return SNAPSHOT_ZIP.format(year=validate_year(year))
 
 
+PARTITION_BY = "RANGE_BUCKET(activity_year, GENERATE_ARRAY(2018, 2031, 1))"
+CLUSTER_BY = "state_code, lei, action_taken"
+DESCRIPTION = "HMDA public LAR, raw strings, one partition per activity_year"
+# Integer-range partitions do not support partition expiration, so the sandbox's
+# 60-day partition expiration does not drop old activity_year partitions
+# (the 60-day *table* expiration still applies, see docs/data-notes.md).
+
+# Size guard: the BigQuery sandbox has a 10 GiB lifetime storage quota.
+DEFAULT_YEAR = max(SUPPORTED_YEARS)
+MAX_STATES_WITHOUT_ALLOW_LARGE = 1
+
+
 def table_ddl(table_id: str) -> str:
     cols = ",\n  ".join(f"`{n}` {t}" for n, t in raw_schema())
     return (
         f"CREATE TABLE IF NOT EXISTS `{table_id}` (\n  {cols}\n)\n"
-        "PARTITION BY RANGE_BUCKET(activity_year, GENERATE_ARRAY(2018, 2031, 1))\n"
-        "CLUSTER BY state_code, lei, action_taken\n"
-        "OPTIONS (description = 'HMDA public LAR, raw strings, one partition per activity_year')"
+        f"PARTITION BY {PARTITION_BY}\n"
+        f"CLUSTER BY {CLUSTER_BY}\n"
+        f"OPTIONS (description = '{DESCRIPTION}')"
     )
 
 
-def swap_sql(table_id: str, scratch_id: str, year: int, states: Sequence[str] | None) -> str:
-    """DELETE the exact scope being reloaded, then INSERT: re-running is idempotent."""
+def scope_predicate(year: int, states: Sequence[str] | None) -> str:
+    """The exact slice a run replaces: one activity_year, optionally some states."""
     scope = f"activity_year = {int(year)}"
     if states:
         quoted = ", ".join(f"'{s.upper()}'" for s in states if re.fullmatch(r"[A-Za-z]{2}", s))
+        if not quoted:
+            raise ValueError(f"No valid 2-letter state codes in {list(states)}")
         scope += f" AND state_code IN ({quoted})"
-    cols = ", ".join(f"`{n}`" for n, _ in raw_schema())
-    return (
-        "BEGIN TRANSACTION;\n"
-        f"DELETE FROM `{table_id}` WHERE {scope};\n"
-        f"INSERT INTO `{table_id}` ({cols})\nSELECT {cols} FROM `{scratch_id}` WHERE {scope};\n"
-        "COMMIT TRANSACTION;"
+    return f"({scope})"
+
+
+def swap_sql(table_id: str, staging_id: str, year: int, states: Sequence[str] | None) -> str:
+    """Sandbox-safe idempotent swap (DDL only, no DML): rebuild the target as
+    (rows outside the scope) UNION ALL (staging rows inside the scope)."""
+    from . import bq
+
+    return bq.rebuild_sql(
+        table_id, staging_id, [n for n, _ in raw_schema()], scope_predicate(year, states),
+        PARTITION_BY, CLUSTER_BY, DESCRIPTION,
     )
+
+
+def check_scope(years: Sequence[int], source: str, states: Sequence[str] | None,
+                allow_large: bool) -> list[str]:
+    """Keep loads small by default (one state, one year). Anything wider needs
+    ``allow_large``. Returns warnings to log; raises ValueError if blocked."""
+    reasons = []
+    if source == "snapshot":
+        reasons.append("source=snapshot loads the nationwide file (every state)")
+    if len(years) > 1:
+        reasons.append(f"{len(years)} years requested")
+    if states and len(states) > MAX_STATES_WITHOUT_ALLOW_LARGE:
+        reasons.append(f"{len(states)} states requested")
+    if not reasons:
+        return []
+    msg = ("Large HMDA scope: " + "; ".join(reasons) + ". The BigQuery sandbox has a 10 GiB "
+           "lifetime storage quota that is not refunded on deletion, and every reload rewrites "
+           "the whole raw table. Start with one state and one year.")
+    if not allow_large:
+        raise ValueError(msg + " Pass --allow-large to proceed anyway.")
+    return [msg]
 
 
 def transform_rows(lines: Iterable[str], source: str, ingested_at: str | None = None) -> Iterator[list[str]]:
@@ -151,10 +191,15 @@ def iter_lines(path: Path) -> Iterator[str]:
 
 
 def run(settings, years: Sequence[int], source: str, states: Sequence[str] | None,
-        actions: Sequence[int] | None, data_dir: Path, dry_run: bool) -> list[dict]:
+        actions: Sequence[int] | None, data_dir: Path, dry_run: bool,
+        allow_large: bool = False) -> list[dict]:
     """Plan (and unless dry_run, execute) one load per year. Returns the plan."""
     from . import bq
 
+    for year in years:
+        validate_year(year)
+    for warning in check_scope(years, source, states, allow_large):
+        log.warning("%s", warning)
     table_id = settings.table_id(RAW_TABLE)
     plan = []
     for year in years:
@@ -162,11 +207,11 @@ def run(settings, years: Sequence[int], source: str, states: Sequence[str] | Non
         tag = "_".join(sorted(s.upper() for s in states)) if states else "all"
         step = {
             "year": year, "url": url, "table": table_id,
-            "scratch": settings.table_id(f"_scratch_hmda_{year}_{tag}"),
+            "staging": settings.table_id(f"_staging_hmda_{year}_{tag}"),
             "local_file": str(data_dir / f"hmda_{year}_{source}_{tag}" / "lar.clean.csv"),
             "states": list(states or []),
         }
-        step["sql"] = swap_sql(table_id, step["scratch"], year, states)
+        step["sql"] = swap_sql(table_id, step["staging"], year, states)
         plan.append(step)
         if dry_run:
             log.info("[dry-run] year=%s url=%s -> %s\nDDL:\n%s\nSQL:\n%s",
@@ -176,8 +221,8 @@ def run(settings, years: Sequence[int], source: str, states: Sequence[str] | Non
         write_clean_csv(iter_lines(raw_path), Path(step["local_file"]), source=url)
         client = bq.get_client(settings.gcp_project_id, settings.bq_location)
         bq.ensure_dataset(client, f"{settings.gcp_project_id}.{settings.bq_dataset}", settings.bq_location)
-        bq.ensure_table(client, table_id, table_ddl(table_id))
-        bq.load_csv_to_scratch(client, Path(step["local_file"]), step["scratch"], raw_schema())
-        bq.replace_scope(client, step["sql"])
-        client.delete_table(step["scratch"], not_found_ok=True)
+        step["rows_loaded"] = bq.load_scope(
+            client, table_id=table_id, staging_id=step["staging"], csv_path=Path(step["local_file"]),
+            fields=raw_schema(), create_ddl=table_ddl(table_id), rebuild=step["sql"],
+        )
     return plan

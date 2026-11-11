@@ -70,19 +70,45 @@ def write_csv(rows: Iterable[dict], path: Path) -> int:
     return n
 
 
-def table_ddl(table_id: str) -> str:
+PARTITION_BY = "DATE_TRUNC(observation_date, MONTH)"
+CLUSTER_BY = "series_id"
+DESCRIPTION = "FRED observations (see SERIES), one row per series and date"
+
+
+def partition_by(sandbox: bool) -> str | None:
+    """Monthly partitions on observation_date, except in the BigQuery sandbox.
+
+    The sandbox expires every time-unit partition 60 days after its partition
+    date, so partitions for 2018-2025 observations would be dropped as soon as
+    they are written. The table is tiny (a few series), so in sandbox mode it is
+    left unpartitioned and only clustered by series_id.
+    """
+    return None if sandbox else PARTITION_BY
+
+
+def table_ddl(table_id: str, sandbox: bool = True) -> str:
     cols = ",\n  ".join(f"`{n}` {t}" for n, t in SCHEMA)
+    part = partition_by(sandbox)
     return (f"CREATE TABLE IF NOT EXISTS `{table_id}` (\n  {cols}\n)\n"
-            "PARTITION BY DATE_TRUNC(observation_date, MONTH)\nCLUSTER BY series_id")
+            + (f"PARTITION BY {part}\n" if part else "")
+            + f"CLUSTER BY {CLUSTER_BY}\n"
+            f"OPTIONS (description = '{DESCRIPTION}')")
 
 
-def swap_sql(table_id: str, scratch_id: str, series: Sequence[str]) -> str:
+def scope_predicate(series: Sequence[str]) -> str:
     ids = ", ".join(f"'{s}'" for s in series if s in SERIES)
-    cols = ", ".join(n for n, _ in SCHEMA)
-    return ("BEGIN TRANSACTION;\n"
-            f"DELETE FROM `{table_id}` WHERE series_id IN ({ids});\n"
-            f"INSERT INTO `{table_id}` ({cols}) SELECT {cols} FROM `{scratch_id}`;\n"
-            "COMMIT TRANSACTION;")
+    if not ids:
+        raise ValueError(f"No known FRED series in {list(series)}; allowed {SERIES}")
+    return f"(series_id IN ({ids}))"
+
+
+def swap_sql(table_id: str, staging_id: str, series: Sequence[str], sandbox: bool = True) -> str:
+    """Sandbox-safe idempotent swap (DDL only): rebuild the table keeping other
+    series and replacing the reloaded ones with the staging rows."""
+    from . import bq
+
+    return bq.rebuild_sql(table_id, staging_id, [n for n, _ in SCHEMA], scope_predicate(series),
+                          partition_by(sandbox), CLUSTER_BY, DESCRIPTION)
 
 
 def fetch(series_id: str, api_key: str, start: str, end: str | None) -> dict:
@@ -99,12 +125,13 @@ def run(settings, series: Sequence[str], start: str, end: str | None, data_dir: 
     from . import bq
 
     table_id = settings.table_id(RAW_TABLE)
-    scratch = settings.table_id("_scratch_fred")
-    plan = {"table": table_id, "series": list(series),
+    staging = settings.table_id("_staging_fred")
+    sandbox = getattr(settings, "bq_sandbox", True)
+    plan = {"table": table_id, "series": list(series), "sandbox": sandbox,
             "urls": [redact(obs_url(s, settings.fred_api_key or "DUMMY", start, end)) for s in series],
-            "sql": swap_sql(table_id, scratch, series)}
+            "sql": swap_sql(table_id, staging, series, sandbox)}
     if dry_run:
-        log.info("[dry-run] %s", plan)
+        log.info("[dry-run] %s\nDDL:\n%s", plan, table_ddl(table_id, sandbox))
         return plan
     if not settings.fred_api_key:
         raise RuntimeError("FRED_API_KEY is not set")
@@ -115,8 +142,8 @@ def run(settings, series: Sequence[str], start: str, end: str | None, data_dir: 
     plan["rows"] = write_csv(rows, path)
     client = bq.get_client(settings.gcp_project_id, settings.bq_location)
     bq.ensure_dataset(client, f"{settings.gcp_project_id}.{settings.bq_dataset}", settings.bq_location)
-    bq.ensure_table(client, table_id, table_ddl(table_id))
-    bq.load_csv_to_scratch(client, path, scratch, SCHEMA)
-    bq.replace_scope(client, plan["sql"])
-    client.delete_table(scratch, not_found_ok=True)
+    plan["rows_loaded"] = bq.load_scope(
+        client, table_id=table_id, staging_id=staging, csv_path=path, fields=SCHEMA,
+        create_ddl=table_ddl(table_id, sandbox), rebuild=plan["sql"],
+    )
     return plan

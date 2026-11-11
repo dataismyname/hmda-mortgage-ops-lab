@@ -52,11 +52,49 @@ def test_ddl_is_partitioned_and_clustered():
     assert "CREATE TABLE IF NOT EXISTS" in ddl
 
 
-def test_swap_sql_is_scoped_and_transactional():
+def test_swap_sql_is_ddl_only_and_scoped():
     sql = hmda.swap_sql("p.d.t", "p.d.s", 2024, ["DE", "x;drop"])
-    assert sql.startswith("BEGIN TRANSACTION;") and sql.endswith("COMMIT TRANSACTION;")
-    assert "DELETE FROM `p.d.t` WHERE activity_year = 2024 AND state_code IN ('DE')" in sql
-    assert "drop" not in sql.lower().replace("delete", "")
+    assert sql.startswith("CREATE OR REPLACE TABLE `p.d.t`")
+    for kw in ("INSERT", "DELETE", "MERGE", "UPDATE", "BEGIN TRANSACTION"):
+        assert kw not in sql.upper()
+    scope = "(activity_year = 2024 AND state_code IN ('DE'))"
+    assert f"FROM `p.d.t` WHERE NOT COALESCE({scope}, FALSE)" in sql
+    assert f"FROM `p.d.s` WHERE {scope}" in sql
+    assert "UNION ALL" in sql
+    assert "drop" not in sql.lower()
+
+
+def test_swap_sql_keeps_partitioning_and_clustering_identical_to_ddl():
+    ddl, sql = hmda.table_ddl("p.d.t"), hmda.swap_sql("p.d.t", "p.d.s", 2025, None)
+    for clause in ("PARTITION BY RANGE_BUCKET(activity_year, GENERATE_ARRAY(2018, 2031, 1))",
+                   "CLUSTER BY state_code, lei, action_taken"):
+        assert clause in ddl and clause in sql
+    assert "WHERE NOT COALESCE((activity_year = 2025), FALSE)" in sql
+
+
+def test_swap_sql_rejects_only_invalid_states():
+    with pytest.raises(ValueError):
+        hmda.swap_sql("p.d.t", "p.d.s", 2024, ["x;drop"])
+
+
+def test_default_year_is_latest_supported():
+    assert hmda.DEFAULT_YEAR == max(hmda.SUPPORTED_YEARS) == 2025
+
+
+@pytest.mark.parametrize("years,source,states", [
+    ([2024, 2025], "api", ["DE"]),
+    ([2025], "snapshot", None),
+    ([2025], "api", ["DE", "TX"]),
+])
+def test_large_scope_needs_allow_large(years, source, states):
+    with pytest.raises(ValueError, match="--allow-large"):
+        hmda.check_scope(years, source, states, allow_large=False)
+    warnings = hmda.check_scope(years, source, states, allow_large=True)
+    assert warnings and "10 GiB" in warnings[0]
+
+
+def test_small_scope_has_no_warning():
+    assert hmda.check_scope([2025], "api", ["DE"], allow_large=False) == []
 
 
 def test_transform_fixture(fixtures_dir):
@@ -94,7 +132,8 @@ def test_iter_lines_reads_zip(tmp_path, fixtures_dir):
 
 def test_run_dry_run_makes_no_calls(tmp_path):
     s = Settings(gcp_project_id="demo", bq_dataset="hmda_raw", bq_location="US", fred_api_key=None)
-    plan = hmda.run(s, [2024, 2025], "api", ["DE"], None, tmp_path, dry_run=True)
+    plan = hmda.run(s, [2024, 2025], "api", ["DE"], None, tmp_path, dry_run=True, allow_large=True)
     assert [p["year"] for p in plan] == [2024, 2025]
     assert plan[0]["table"] == "demo.hmda_raw.hmda_lar"
+    assert plan[0]["staging"] == "demo.hmda_raw._staging_hmda_2024_DE"
     assert not any(tmp_path.iterdir())

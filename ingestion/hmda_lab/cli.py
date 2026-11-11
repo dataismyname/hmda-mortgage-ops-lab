@@ -21,11 +21,15 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     h = sub.add_parser("hmda", help="HMDA public LAR")
-    h.add_argument("--years", type=int, nargs="+", default=list(hmda.SUPPORTED_YEARS))
+    h.add_argument("--years", type=int, nargs="+", default=[hmda.DEFAULT_YEAR],
+                   help=f"activity years, from {list(hmda.SUPPORTED_YEARS)} (default: {hmda.DEFAULT_YEAR})")
     h.add_argument("--source", choices=["api", "snapshot"], default="api",
                    help="api = Data Browser CSV (needs --states); snapshot = nationwide zip")
     h.add_argument("--states", nargs="*", help="2-letter state codes, e.g. DE TX")
     h.add_argument("--actions", type=int, nargs="*", help="action_taken codes 1-8 (default: all)")
+    h.add_argument("--allow-large", action="store_true",
+                   help="allow more than one state, more than one year, or the nationwide snapshot "
+                        "(mind the BigQuery sandbox 10 GiB lifetime storage quota)")
 
     f = sub.add_parser("fred", help="FRED rates and macro series")
     f.add_argument("--series", nargs="+", default=list(fred.SERIES))
@@ -37,7 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     setup_logging(args.log_level)
-    settings = Settings.from_env()
+    try:
+        settings = Settings.from_env()
+    except ValueError as exc:
+        log.error("%s", exc)
+        return 2
     if not args.dry_run and not settings.gcp_project_id:
         log.error("GCP_PROJECT_ID is not set (use --dry-run to only print the plan)")
         return 2
@@ -46,7 +54,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.source == "api" and not args.states:
                 log.error("--source api needs --states (or use --source snapshot)")
                 return 2
-            plan = hmda.run(settings, args.years, args.source, args.states, args.actions, args.data_dir, args.dry_run)
+            plan = hmda.run(settings, args.years, args.source, args.states, args.actions, args.data_dir,
+                             args.dry_run, allow_large=args.allow_large)
         else:
             plan = fred.run(settings, args.series, args.start, args.end, args.data_dir, args.dry_run)
     except ValueError as exc:

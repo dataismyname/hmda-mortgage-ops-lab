@@ -34,7 +34,7 @@ with DAG(
         task_id="load_hmda",
         bash_command=(f"cd {PROJECT} && python -m hmda_lab hmda "
                       "--source {{ dag_run.conf.get('source', 'api') }} "
-                      "--years {{ dag_run.conf.get('years', '2024 2025') }} "
+                      "--years {{ dag_run.conf.get('years', '2025') }} "
                       "--states {{ dag_run.conf.get('states', 'DE') }}"),
         env={"PYTHONPATH": f"{PROJECT}/ingestion"}, append_env=True,
     )

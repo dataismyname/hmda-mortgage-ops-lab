@@ -36,6 +36,24 @@ def test_sql_and_ddl():
     assert "CLUSTER BY series_id" in fred.table_ddl("p.d.t")
     sql = fred.swap_sql("p.d.t", "p.d.s", ["DGS10", "BAD"])
     assert "series_id IN ('DGS10')" in sql and "BAD" not in sql
+    assert sql.startswith("CREATE OR REPLACE TABLE `p.d.t`")
+    assert "DELETE" not in sql and "INSERT" not in sql and "TRANSACTION" not in sql
+
+
+def test_sandbox_mode_drops_time_partitioning():
+    """Sandbox expires time-unit partitions 60 days after the partition date, which would
+    drop historical FRED rows; sandbox mode leaves the table unpartitioned."""
+    sandbox_ddl = fred.table_ddl("p.d.t", sandbox=True)
+    assert "PARTITION BY" not in sandbox_ddl and "CLUSTER BY series_id" in sandbox_ddl
+    assert "PARTITION BY" not in fred.swap_sql("p.d.t", "p.d.s", ["DGS10"], sandbox=True)
+    full = "PARTITION BY DATE_TRUNC(observation_date, MONTH)"
+    assert full in fred.table_ddl("p.d.t", sandbox=False)
+    assert full in fred.swap_sql("p.d.t", "p.d.s", ["DGS10"], sandbox=False)
+
+
+def test_swap_sql_needs_a_known_series():
+    with pytest.raises(ValueError):
+        fred.swap_sql("p.d.t", "p.d.s", ["BAD"])
 
 
 def test_dry_run_without_key(tmp_path):
