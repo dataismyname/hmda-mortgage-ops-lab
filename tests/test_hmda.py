@@ -131,7 +131,7 @@ def test_iter_lines_reads_zip(tmp_path, fixtures_dir):
 
 
 def test_run_dry_run_makes_no_calls(tmp_path):
-    s = Settings(gcp_project_id="demo", bq_dataset="hmda_raw", bq_location="US", fred_api_key=None)
+    s = Settings(gcp_project_id="demo", bq_dataset="hmda_raw", bq_location="US")
     plan = hmda.run(s, [2024, 2025], "api", ["DE"], None, tmp_path, dry_run=True, allow_large=True)
     assert [p["year"] for p in plan] == [2024, 2025]
     assert plan[0]["table"] == "demo.hmda_raw.hmda_lar"

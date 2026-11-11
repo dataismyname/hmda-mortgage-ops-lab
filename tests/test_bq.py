@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from hmda_lab import bq, config, fred, hmda
+from hmda_lab import bq, hmda
 
 
 class FakeJob:
@@ -73,7 +73,7 @@ def test_assert_no_dml_blocks_dml(sql):
 
 def test_assert_no_dml_allows_ddl():
     for sql in (hmda.table_ddl("p.d.t"), hmda.swap_sql("p.d.t", "p.d.s", 2025, ["DE"]),
-                fred.table_ddl("p.d.f"), fred.swap_sql("p.d.f", "p.d.s", list(fred.SERIES))):
+                hmda.swap_sql("p.d.t", "p.d.s", 2024, None)):
         assert bq.assert_no_dml(sql) == sql
 
 
@@ -108,14 +108,3 @@ def test_load_scope_drops_staging_on_failure(tmp_path, fake_bigquery):
                       fields=[("a", "STRING")], create_ddl="CREATE TABLE IF NOT EXISTS `p.d.t` (a STRING)",
                       rebuild="CREATE OR REPLACE TABLE `p.d.t` AS SELECT 1")
     assert client.calls[-1] == ("delete", "p.d.s")
-
-
-@pytest.mark.parametrize("raw,expected", [
-    (None, True), ("", True), ("true", True), ("1", True), ("FALSE", False), ("0", False), ("off", False),
-])
-def test_bq_sandbox_flag(monkeypatch, raw, expected):
-    if raw is None:
-        monkeypatch.delenv("BQ_SANDBOX", raising=False)
-    else:
-        monkeypatch.setenv("BQ_SANDBOX", raw)
-    assert config.Settings.from_env().bq_sandbox is expected

@@ -1,4 +1,4 @@
-"""CLI: python -m hmda_lab.cli {hmda,fred} [...] [--dry-run]"""
+"""CLI: python -m hmda_lab.cli hmda [...] [--dry-run]"""
 from __future__ import annotations
 
 import argparse
@@ -7,14 +7,14 @@ import logging
 import sys
 from pathlib import Path
 
-from . import fred, hmda
+from . import hmda
 from .config import Settings, setup_logging
 
 log = logging.getLogger("hmda_lab")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="hmda-lab", description="Load HMDA and FRED data into BigQuery raw tables.")
+    p = argparse.ArgumentParser(prog="hmda-lab", description="Load HMDA public LAR data into BigQuery raw tables.")
     p.add_argument("--log-level", default="INFO")
     p.add_argument("--data-dir", default="data", type=Path)
     p.add_argument("--dry-run", action="store_true", help="Print plan, URLs and SQL; no download, no BigQuery.")
@@ -31,33 +31,22 @@ def build_parser() -> argparse.ArgumentParser:
                    help="allow more than one state, more than one year, or the nationwide snapshot "
                         "(mind the BigQuery sandbox 10 GiB lifetime storage quota)")
 
-    f = sub.add_parser("fred", help="FRED rates and macro series")
-    f.add_argument("--series", nargs="+", default=list(fred.SERIES))
-    f.add_argument("--start", default="2018-01-01")
-    f.add_argument("--end", default=None)
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     setup_logging(args.log_level)
-    try:
-        settings = Settings.from_env()
-    except ValueError as exc:
-        log.error("%s", exc)
-        return 2
+    settings = Settings.from_env()
     if not args.dry_run and not settings.gcp_project_id:
         log.error("GCP_PROJECT_ID is not set (use --dry-run to only print the plan)")
         return 2
+    if args.source == "api" and not args.states:
+        log.error("--source api needs --states (or use --source snapshot)")
+        return 2
     try:
-        if args.command == "hmda":
-            if args.source == "api" and not args.states:
-                log.error("--source api needs --states (or use --source snapshot)")
-                return 2
-            plan = hmda.run(settings, args.years, args.source, args.states, args.actions, args.data_dir,
-                             args.dry_run, allow_large=args.allow_large)
-        else:
-            plan = fred.run(settings, args.series, args.start, args.end, args.data_dir, args.dry_run)
+        plan = hmda.run(settings, args.years, args.source, args.states, args.actions, args.data_dir,
+                        args.dry_run, allow_large=args.allow_large)
     except ValueError as exc:
         log.error("%s", exc)
         return 2
