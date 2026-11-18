@@ -33,7 +33,7 @@ select
     {{ safe_numeric('property_value') }}         as property_value,
     {{ safe_numeric('income') }}                 as income_thousands,
     debt_to_income_ratio                         as dti_bucket,
-    {{ safe_numeric('combined_loan_to_value_ratio') }} as cltv,
+    {{ safe_numeric('loan_to_value_ratio') }} as cltv,
     {{ safe_numeric('interest_rate') }}          as interest_rate,
     {{ safe_numeric('rate_spread') }}            as rate_spread,
     {{ safe_numeric('total_loan_costs') }}       as total_loan_costs,
