@@ -4,10 +4,10 @@ A public analytics engineering lab on the U.S. mortgage market, built only on pu
 the **HMDA** loan/application register published by the CFPB/FFIEC. Python loads raw data into
 BigQuery; dbt types, tests and models it into marts.
 
-> **Status: phase 1.5, code complete, verification on BigQuery pending.** The ingestion code and
-> the dbt project have offline tests (pytest, `dbt parse`), but they have **not yet been run
-> against a real BigQuery project**, so this README shows no results or figures from the
-> warehouse. See [Status and what's missing](#status-and-whats-missing).
+> **Status: phase 1.5, verified on BigQuery (Delaware 2025, 17 Nov 2026).** Python
+> ingestion loaded 55,183 HMDA rows into a real BigQuery project. dbt built 9 models
+> and 3 seeds with 69 data tests (`PASS=78`, 0 errors). Offline pytest is 40/40.
+> Selected warehouse results are in [Verified results](#verified-results-delaware-2025).
 
 ## Goal and business question
 
@@ -24,6 +24,25 @@ with reproducible, tested SQL on public data:
   comparable loan) by year, state, loan type, purpose, term and lien status.
 
 Public HMDA has no application or action dates, so everything is measured per `activity_year`.
+
+## Verified results (Delaware 2025)
+
+Scope: **Delaware (`DE`), activity year 2025**, verified on 17 November 2026 against a
+real BigQuery project (sandbox). These figures are from that run only.
+
+| Result | Value |
+|---|---|
+| Rows loaded | 55,183 |
+| dbt | 9 models, 3 seeds, 69 data tests; `PASS=78`, 0 errors |
+| pytest (offline) | 40/40 |
+| Pipeline pull-through | 59.19% (27,033 originations / 45,672 applications with `action_taken` 1–5) |
+| Weighted-average rate spread, first lien | 0.223 pp (coverage 18,642 / 20,685 originated loans) |
+| Weighted-average rate spread, subordinate lien | 1.166 pp (coverage 5,987 / 6,348 originated loans) |
+
+Pull-through uses the `mart_pipeline_pullthrough` population (final actions 1–5).
+Rate spread is APR minus APOR, in percentage points, for originated loans
+(`action_taken` = 1). Loans with `rate_spread` `NA` or `Exempt` are in the
+origination counts but not in the spread averages; coverage is shown above.
 
 ## Architecture
 
@@ -202,9 +221,9 @@ Details in [docs/data-notes.md](docs/data-notes.md).
 
 | Item | Status |
 |---|---|
-| Ingestion CLI (HMDA), sandbox-safe loads | Code and unit tests done; **first real BigQuery load pending** |
-| dbt models and 69 data tests | `dbt parse` passes; **`dbt build` on BigQuery pending** |
-| Results or figures from the warehouse | None published until the verification run |
+| Ingestion CLI (HMDA), sandbox-safe loads | Verified on BigQuery: Delaware 2025, 55,183 rows (17 Nov 2026) |
+| dbt models and 69 data tests | Verified on BigQuery: 9 models, 3 seeds, 69 tests, `PASS=78`, 0 errors |
+| Results or figures from the warehouse | Published above for Delaware 2025 (17 Nov 2026) |
 | Dashboards | Not started |
 | CI | Not set up |
 | Orchestration | `airflow/dags/hmda_lab_dag.py` is a skeleton that has never been run |

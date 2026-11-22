@@ -37,5 +37,10 @@ Limits that matter here, from [Try BigQuery using the sandbox](https://cloud.goo
 If the project is later upgraded to billing, review the dataset default expirations; no code change
 is needed. Upgrading means possible spend and is David's decision.
 
-**Status:** this flow has unit tests with a fake client only. It has **not** yet been run against a
-real BigQuery project; verification is pending.
+**Status:** The load and `dbt build` have been run against a real BigQuery sandbox project.
+Scope: Delaware, activity year 2025, verified on 17 November 2026. 55,183 rows were loaded.
+dbt: 3 seeds, 9 models, 69 data tests, `PASS=78`, 0 errors. Offline pytest: 40/40.
+Pipeline pull-through (`action_taken` 1–5) was 59.19% (27,033 originations / 45,672
+applications). Weighted-average rate spread on originated loans: 0.223 pp for first-lien
+loans (coverage 18,642 / 20,685) and 1.166 pp for subordinate-lien loans
+(coverage 5,987 / 6,348).
