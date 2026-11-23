@@ -246,5 +246,18 @@ docs/                 Data notes
 |---|---|---|---|
 | HMDA public loan-level data (CFPB / FFIEC) | Mortgage applications and loans reported under the Home Mortgage Disclosure Act, activity years 2024 and 2025 | [Data publication](https://ffiec.cfpb.gov/data-publication/) · [Data Browser API](https://ffiec.cfpb.gov/documentation/api/data-browser/) · [Public LAR data fields](https://ffiec.cfpb.gov/documentation/publications/loan-level-datasets/lar-data-fields) · [Disclosure policy (Federal Register, 2019)](https://www.federalregister.gov/documents/2019/01/31/2018-28404/disclosure-of-loan-level-hmda-data) | Published by the agencies for public use, modified by the CFPB to protect applicant and borrower privacy. This repo does not redistribute the data files; it downloads them from the source. |
 
-The code is MIT-licensed (see `LICENSE`). Analyses describe aggregate market patterns and must not
-be used to identify individuals or to make credit decisions.
+The code is MIT-licensed (see `LICENSE`).
+
+## Responsible use
+
+Analyses describe aggregate market patterns and must not be used to identify
+individuals or to make credit decisions. The public HMDA LAR is modified by the
+CFPB to protect applicant and borrower privacy.
+
+**Demographic fields.** Fields such as `derived_race`, `derived_ethnicity`,
+`derived_sex`, `applicant_age` and `tract_minority_pct` may appear only in
+staging. They are not used in published marts, dashboards or predictive models.
+If a demographic cut is ever published, it will be aggregates only, with a
+minimum number of applications per cell, to be set before publishing, and will
+not infer discrimination or fair-lending compliance. Any disparity analysis
+requires an explicit decision by David.

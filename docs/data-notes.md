@@ -44,3 +44,23 @@ Pipeline pull-through (`action_taken` 1–5) was 59.19% (27,033 originations / 4
 applications). Weighted-average rate spread on originated loans: 0.223 pp for first-lien
 loans (coverage 18,642 / 20,685) and 1.166 pp for subordinate-lien loans
 (coverage 5,987 / 6,348).
+
+## Demographic fields
+
+Approved 22 November 2026.
+
+The public LAR includes demographic and related fields such as `derived_race`,
+`derived_ethnicity`, `derived_sex`, `applicant_age` and `tract_minority_pct`.
+This project uses them under the following policy:
+
+- Those fields may be present in staging only. They must not appear in
+  published marts, dashboards or predictive models.
+- If a demographic cut is ever published, it will be aggregate counts or rates
+  only, with a minimum number of applications per cell, to be set before
+  publishing. The publication must not infer discrimination or fair-lending
+  compliance.
+- The public LAR is modified by the CFPB to protect applicant and borrower
+  privacy. It does not identify individuals and must not be used to make credit
+  decisions.
+- Any demographic disparity analysis requires an explicit decision by David
+  and is not approved until that decision is made.
